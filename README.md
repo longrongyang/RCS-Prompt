@@ -26,5 +26,5 @@ bash training_scripts/train_imr_dino.sh
 ## Eval
 
 ```bash
-bash eval_scripts/eval_imr_dino.sh
+bash training_scripts/eval_imr_dino.sh
 ```
