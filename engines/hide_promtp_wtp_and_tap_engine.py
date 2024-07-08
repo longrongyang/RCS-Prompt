@@ -43,25 +43,28 @@ def train_one_epoch(model: torch.nn.Module, original_model: torch.nn.Module,
         with torch.no_grad():
             if original_model is not None:
                 output = original_model(input)
-                logits = output['logits']
-
+                ptm_logits = output['logits']
                 if args.train_mask and class_mask is not None:
                     mask = []
                     for id in range(task_id + 1):
                         mask.extend(class_mask[id])
                     not_mask = np.setdiff1d(np.arange(args.nb_classes), mask)
                     not_mask = torch.tensor(not_mask, dtype=torch.int64).to(device)
-                    logits = logits.index_fill(dim=1, index=not_mask, value=float('-inf'))
-                    prompt_id = torch.max(logits, dim=1)[1]
+                    ptm_logits = ptm_logits.index_fill(dim=1, index=not_mask, value=float('-inf'))
+                    prompt_id = torch.max(ptm_logits, dim=1)[1]
                     # translate cls to task_id
-                    prompt_id = torch.tensor([target_task_map[v.item()] for v in prompt_id], device=device).unsqueeze(
-                        -1)
+                    prompt_id = torch.tensor([target_task_map[v.item()] for v in prompt_id], device=device).unsqueeze(-1)
                 else:
                     prompt_id = None
             else:
                 raise NotImplementedError("original model is None")
-        output = model(input, task_id=task_id, prompt_id=prompt_id, train=set_training_mode,
-                       prompt_momentum=args.prompt_momentum)
+        output = model(input, task_id=task_id, prompt_id=prompt_id, train=set_training_mode, prompt_momentum=args.prompt_momentum)
+
+        logits = output['logits']
+        begin = task_id * 20
+        end = (task_id + 1) * 20
+        logits_ = logits[:, :end].clone()
+      
         logits = output['logits']
         # here is the trick to mask out classes of non-current tasks
         if args.train_mask and class_mask is not None:
@@ -70,7 +73,26 @@ def train_one_epoch(model: torch.nn.Module, original_model: torch.nn.Module,
             not_mask = torch.tensor(not_mask, dtype=torch.int64).to(device)
             logits = logits.index_fill(dim=1, index=not_mask, value=float('-inf'))
 
-        loss = criterion(logits, target)  # base criterion (CrossEntropyLoss)
+        if (task_id > 0) & (ptm_logits is not None):
+            # target
+            ptm_target = ptm_logits.argmax(1)
+            possible_task = ptm_target // 20
+            ptm_target[possible_task == task_id] = target[possible_task == task_id].clone()
+            # logit
+            scores = F.softmax(logits_, dim=1)
+            # loss
+            possible_target_one_hot = F.one_hot(ptm_target, num_classes=end).float().to('cuda')
+            scores = torch.clamp(scores, min=1e-7, max=1.0)
+            possible_target_one_hot = torch.clamp(possible_target_one_hot, min=1e-4, max=1.0)
+            ce = -1. * torch.sum(possible_target_one_hot * torch.log(scores), dim=1)
+            rce = -1. * torch.sum(scores * torch.log(possible_target_one_hot), dim=1)
+            loss_discrimination = 0.4 * (0.01 * ce + rce).mean()
+            loss_entropy = F.cross_entropy(logits, target, reduction='mean')
+            loss = loss_discrimination + loss_entropy
+        else:
+            loss = F.cross_entropy(logits, target, reduction='mean')
+      
+        # loss = criterion(logits, target)  # base criterion (CrossEntropyLoss)
         # TODO add contrastive loss
         loss += orth_loss(output['pre_logits'], target, device, args)
         acc1, acc5 = accuracy(logits, target, topk=(1, 5))
@@ -82,6 +104,12 @@ def train_one_epoch(model: torch.nn.Module, original_model: torch.nn.Module,
         optimizer.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm)
+
+        # isolate gradients
+        if begin > 0:
+            model.module.head.weight.grad[:begin].fill_(0)
+            model.module.head.bias.grad[:begin].fill_(0)
+      
         optimizer.step()
 
         torch.cuda.synchronize()
