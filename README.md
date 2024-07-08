@@ -13,7 +13,7 @@ This repository is the official implementation of ECCV 2024: RCS-Prompt: Learnin
 
 
 ## Install
-This repo is build on HiDe-Prompt
+This repo is built on HiDe-Prompt.
 
 Please refer [this link](https://github.com/thu-ml/HiDe-Prompt) to build the environment and prepare the datasets.
 
