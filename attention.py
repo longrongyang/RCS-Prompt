@@ -26,6 +26,21 @@ class PreT_Attention(nn.Module):
             key_prefix = prompt[0] # B, num_heads, prompt_length, embed_dim // num_heads
             value_prefix = prompt[1] # B, num_heads, prompt_length, embed_dim // num_heads
 
+            s1, s2, s3, s4 = key_prefix.size()
+            k_mean = k.reshape(B, -1).mean(dim=1).unsqueeze(1)
+            k_std = k.reshape(B, -1).std(dim=1).unsqueeze(1) + 1e-6
+            p_k_mean = key_prefix.reshape(B, -1).mean(dim=1).unsqueeze(1)
+            p_k_std = key_prefix.reshape(B, -1).std(dim=1).unsqueeze(1) + 1e-6
+            key_prefix = ((key_prefix.reshape(B, -1) - p_k_mean) / p_k_std) * k_std + k_mean
+            key_prefix = key_prefix.reshape(s1, s2, s3, s4)
+
+            v_mean = v.reshape(B, -1).mean(dim=1).unsqueeze(1)
+            v_std = v.reshape(B, -1).std(dim=1).unsqueeze(1) + 1e-6
+            p_v_mean = value_prefix.reshape(B, -1).mean(dim=1).unsqueeze(1)
+            p_v_std = value_prefix.reshape(B, -1).std(dim=1).unsqueeze(1) + 1e-6
+            value_prefix = ((value_prefix.reshape(B, -1) - p_v_mean) / p_v_std) * v_std + v_mean
+            value_prefix = value_prefix.reshape(s1, s2, s3, s4)
+
             expected_shape = (B, self.num_heads, C // self.num_heads)
             
             assert (key_prefix.shape[0], key_prefix.shape[1], key_prefix.shape[3]) == expected_shape, f'key_prefix.shape: {key_prefix.shape} not match k.shape: {k.shape}'
