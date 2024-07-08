@@ -6,10 +6,10 @@ This repository is the official implementation of ECCV 2024: RCS-Prompt: Learnin
 
 ## News and ToDo List
 
-- [] Release checkpoints and logs
-- [] Release paper and code
-- [x] [2023-07-14] Accepted by ECCV 2024 🎉 
-- [x] [2023-04-07] Publish initial code
+- [ ] Release checkpoints and logs
+- [ ] Release paper and code
+- [x] [2024-07-08] Publish initial code
+- [x] [2023-07-01] Accepted by ECCV 2024 🎉 
 
 
 ## Install
